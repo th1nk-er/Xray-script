@@ -43,6 +43,7 @@ identifyOS() {
         PACKAGE_MANAGEMENT_REMOVE='yum remove'
         PACKAGE_MANAGEMENT_UPDATE='yum update'
         package_provide_tput='ncurses'
+        ${PACKAGE_MANAGEMENT_INSTALL} 'epel-release' &>/dev/null
     else
         echo "error: The script does not support the package manager in this operating system."
         exit 1
@@ -537,6 +538,8 @@ menu() {
         ;;
     32)
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
+        isCommandExists 'apt' && apt remove --purge -y 'nginx*'
+        isCommandExists 'yum' && yum remove -y 'nginx*'
         ;;
     33)
         echo 'info: restart Xray.'
