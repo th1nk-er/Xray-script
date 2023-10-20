@@ -30,17 +30,17 @@ identifyOS() {
     fi
     if [[ "$(type -P apt)" ]]; then
         PACKAGE_MANAGEMENT_INSTALL='apt -y --no-install-recommends install'
-        PACKAGE_MANAGEMENT_REMOVE='apt purge'
+        PACKAGE_MANAGEMENT_REMOVE='apt purge -y'
         PACKAGE_MANAGEMENT_UPDATE='apt update'
         package_provide_tput='ncurses-bin'
     elif [[ "$(type -P dnf)" ]]; then
         PACKAGE_MANAGEMENT_INSTALL='dnf -y install'
-        PACKAGE_MANAGEMENT_REMOVE='dnf remove'
+        PACKAGE_MANAGEMENT_REMOVE='dnf remove -y'
         PACKAGE_MANAGEMENT_UPDATE='dnf update'
         package_provide_tput='ncurses'
     elif [[ "$(type -P yum)" ]]; then
         PACKAGE_MANAGEMENT_INSTALL='yum -y install'
-        PACKAGE_MANAGEMENT_REMOVE='yum remove'
+        PACKAGE_MANAGEMENT_REMOVE='yum remove -y'
         PACKAGE_MANAGEMENT_UPDATE='yum update'
         package_provide_tput='ncurses'
         ${PACKAGE_MANAGEMENT_INSTALL} 'epel-release' &>/dev/null
@@ -61,9 +61,8 @@ isCommandExists() {
 
 installPackage() {
     local package_name="$1"
-    ${PACKAGE_MANAGEMENT_INSTALL} "$package_name" &>/dev/null
 
-    if [ $? -eq 0 ]; then
+    if ${PACKAGE_MANAGEMENT_INSTALL} "$package_name" &>/dev/null; then
         echo "info: $package_name is installed."
     else
         echo "${red}error: Installation of $package_name failed, please check your network.${reset}"
@@ -171,9 +170,9 @@ EOF
 }
 
 getConfigInfo() {
-    xray_uuid=$(cat $configPath | jq ".inbounds[0].settings.clients[0].id")
+    xray_uuid=$(jq ".inbounds[0].settings.clients[0].id" $configPath)
     xray_addr=$(curl -s 'ip.sb')
-    xray_streamPath=$(cat $configPath | jq ".inbounds[0].streamSettings.wsSettings.path")
+    xray_streamPath=$(jq ".inbounds[0].streamSettings.wsSettings.path" $configPath)
     xray_userDomain=$(grep -m 1 -oP "server_name\s+\K\S+" $nginxPath | tr -d ';')
 }
 
@@ -337,14 +336,16 @@ inputProxyUrl() {
 
 getShareUrl() {
     getConfigInfo
-    local configJson=$(jq -c '{v:2,ps:'\"th1nk-Xray\"',add:'\"$xray_addr\"',port:'\"443\"',id:'$xray_uuid',aid:"0",net:'\"ws\"',host:'\"$xray_userDomain\"',path:'$xray_streamPath',tls:'\"tls\"'}' <<<{})
-    echo "vmess://$(echo -n $configJson | base64 -w 0)"
+    local configJson
+    configJson=$(jq -c '{v:2,ps:'\"th1nk-Xray\"',add:'\""$xray_addr"\"',port:'\"443\"',id:'"$xray_uuid"',aid:"0",net:'\"ws\"',host:'\""$xray_userDomain"\"',path:'"$xray_streamPath"',tls:'\"tls\"'}' <<<{})
+    echo "vmess://$(echo -n "$configJson" | base64 -w 0)"
 }
 
 getQrCode() {
     isCommandExists 'qrencode'
     [ $? -eq 1 ] && installPackage "qrencode"
-    local url=$(getShareUrl)
+    local url
+    url=$(getShareUrl)
     qrencode -t ANSI "${url}"
     echo "${green}$url${reset}"
 }
@@ -373,7 +374,7 @@ install() {
     inputDomain
     inputProxyUrl
     writeXrayConfig $xrayPort
-    writeNginxConfig $xrayPort $userDomain $proxyUrl
+    writeNginxConfig $xrayPort "$userDomain" $proxyUrl
     configWarp
 
     systemctl restart xray nginx
@@ -384,19 +385,20 @@ install() {
 
 modifyXrayUUID() {
     jq ".inbounds[0].settings.clients[0].id = \"$(cat /proc/sys/kernel/random/uuid)\"" $configPath >'config.tmp' && mv 'config.tmp' $configPath
-    echo "${green}$(cat $configPath | jq ".inbounds[0].settings.clients[0].id")${reset}"
+    echo "${green}$(jq ".inbounds[0].settings.clients[0].id" $configPath)${reset}"
     echo 'info: restart Xray.'
     systemctl restart xray
 }
 
 modifyXrayPort() {
-    local oldPort=$(cat $configPath | jq ".inbounds[0].port")
+    local oldPort
+    oldPort=$(jq ".inbounds[0].port" $configPath)
     echo "info: old port $oldPort"
 
     inputXrayPort
     jq ".inbounds[0].port = ${xrayPort}" $configPath >'config.tmp' && mv 'config.tmp' $configPath
     sed -i "s/127.0.0.1:${oldPort}/127.0.0.1:${xrayPort}/" $nginxPath
-    echo "${green}$(cat $configPath | jq ".inbounds[0].port")${reset}"
+    echo "${green}$(jq ".inbounds[0].port" $configPath)${reset}"
 
     echo 'info: restart Xray.'
     systemctl restart xray
@@ -405,7 +407,8 @@ modifyXrayPort() {
 }
 
 modifyWsPath() {
-    local oldPath=$(grep -Eo 'location (/[a-zA-Z0-9]+)' $nginxPath | grep -Eo '/[a-zA-Z0-9]+')
+    local oldPath
+    oldPath=$(grep -Eo 'location (/[a-zA-Z0-9]+)' $nginxPath | grep -Eo '/[a-zA-Z0-9]+')
     echo "info: old websocket path $oldPath"
 
     read -rp "${green}Please input the new websocket path(${red}START WITH /${green}):${reset}" wsPath
@@ -421,7 +424,8 @@ modifyWsPath() {
 }
 
 modifyProxyPassUrl() {
-    local oldProxyPassUrl=$(grep "proxy_pass" $nginxPath | grep -Eo 'https?://[^[:space:]]+' | awk 'NR == 2 {sub(/;$/, "", $0); print}')
+    local oldProxyPassUrl
+    oldProxyPassUrl=$(grep "proxy_pass" $nginxPath | grep -Eo 'https?://[^[:space:]]+' | awk 'NR == 2 {sub(/;$/, "", $0); print}')
     echo "info: old proxy pass url $oldProxyPassUrl"
     inputProxyUrl
     sed -i "s@$oldProxyPassUrl@$proxyUrl@" $nginxPath
@@ -440,10 +444,12 @@ addDomainToWarpProxy() {
 }
 
 deleteDomainFromWarpProxy() {
-    local _domainList=$(jq '.routing.rules[0].domain[]' $configPath)
-    local _domainListLength=$(jq '.routing.rules[0].domain | length' $configPath)
+    local _domainList
+    _domainList=$(jq '.routing.rules[0].domain[]' $configPath)
+    local _domainListLength
+    _domainListLength=$(jq '.routing.rules[0].domain | length' $configPath)
 
-    [ $_domainListLength -eq 0 ] && echo "${red}The WARP Proxy List is empty!${reset}" && return
+    [ "$_domainListLength" -eq 0 ] && echo "${red}The WARP Proxy List is empty!${reset}" && return
 
     local i=0
     for _domain in $_domainList; do
@@ -452,11 +458,11 @@ deleteDomainFromWarpProxy() {
     done
 
     read -rp "${green}Please input the id of domain you want to delete:${reset}" _domainID
-    isNumber _domainID
-    [ $? -ne 0 ] && deleteDomainFromWarpProxy
-    ([ $_domainID -gt $(($_domainListLength - 1)) ] || [ $_domainID -lt 0 ]) && deleteDomainFromWarpProxy
+    ! isNumber _domainID && deleteDomainFromWarpProxy
+    { [ "$_domainID" -gt $((_domainListLength - 1)) ] || [ "$_domainID" -lt 0 ]; } && deleteDomainFromWarpProxy
 
-    local _deleteDomain=$(echo $_domainList | awk "{print \$$(($_domainID + 1))}")
+    local _deleteDomain
+    _deleteDomain=$(echo "$_domainList" | awk "{print \$$((_domainID + 1))}")
     jq ".routing.rules[0].domain -= [$_deleteDomain]" $configPath >'config.tmp' && mv 'config.tmp' $configPath
 
     echo "${red}WARP Proxy List:${reset}"
@@ -538,8 +544,7 @@ menu() {
         ;;
     32)
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
-        isCommandExists 'apt' && apt remove --purge -y 'nginx*'
-        isCommandExists 'yum' && yum remove -y 'nginx*'
+        ${PACKAGE_MANAGEMENT_REMOVE} 'nginx*'
         ;;
     33)
         echo 'info: restart Xray.'
