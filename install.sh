@@ -70,6 +70,16 @@ installPackage() {
     fi
 }
 
+uninstallPackage() {
+    local package_name="$1"
+    if ${PACKAGE_MANAGEMENT_REMOVE} "$package_name" &>/dev/null; then
+        echo "info: $package_name is uninstalled."
+    else
+        echo "${red}error: Uninstallation of $package_name failed, please try to uninstall it manually.${reset}"
+        exit 1
+    fi
+}
+
 installXray() {
     echo "info: install Xray."
     isCommandExists 'xray' && return
@@ -494,7 +504,7 @@ menu() {
     echo -e "\t${green}26.${reset}  Show WARP proxy domain list"
     echo -e "\t—————————————— other ——————————————"
     echo -e "\t${green}31.${reset} update Xray-core"
-    echo -e "\t${green}32.${reset} uninstall Xray and nginx"
+    echo -e "\t${green}32.${reset} uninstall all components"
     echo -e "\t${green}33.${reset} restart Xray and nginx"
     echo -e "\t—————————————— exit ——————————————"
     echo -e "\t${green}100.${reset} exit"
@@ -544,7 +554,10 @@ menu() {
         ;;
     32)
         bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
-        ${PACKAGE_MANAGEMENT_REMOVE} 'nginx*'
+        systemctl stop nginx xray
+        warp-cli disconnect
+        uninstallPackage 'nginx*'
+        uninstallPackage 'cloudflare-warp'
         ;;
     33)
         echo 'info: restart Xray.'
