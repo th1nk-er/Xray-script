@@ -349,7 +349,7 @@ inputProxyUrl() {
 getShareUrl() {
     getConfigInfo
     local shareUrl
-    shareUrl='vless://'$xray_uuid'@'$xray_addr':443?encryption=none&security=tls&type=ws&host='$xray_userDomain'&path=%2F'${xray_streamPath:1}'#th1nk-Xray'
+    shareUrl='vless://'$xray_uuid'@'$xray_addr':443?encryption=none&security=tls&sni='$xray_userDomain'&type=ws&host='$xray_userDomain'&path=%2F'${xray_streamPath:1}'#th1nk-Xray'
     echo "$shareUrl"
 }
 
