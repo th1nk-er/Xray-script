@@ -106,6 +106,7 @@ configWarp() {
     warp-cli --accept-tos register
     warp-cli set-mode proxy
     warp-cli connect
+    sleep 5
     curl -x 'socks5://127.0.0.1:4000' 'https://www.cloudflare.com/cdn-cgi/trace/'
 }
 
