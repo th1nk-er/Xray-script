@@ -106,8 +106,8 @@ configWarp() {
     warp-cli --accept-tos register
     warp-cli set-mode proxy
     warp-cli connect
-    sleep 5
-    curl -x 'socks5://127.0.0.1:4000' 'https://www.cloudflare.com/cdn-cgi/trace/'
+    sleep 3
+    curl -x 'socks5://127.0.0.1:40000' 'https://www.cloudflare.com/cdn-cgi/trace/'
 }
 
 writeXrayConfig() {
@@ -348,10 +348,8 @@ inputProxyUrl() {
 
 getShareUrl() {
     getConfigInfo
-#    local configJson
-#    configJson=$(jq -c '{v:2,ps:'\"th1nk-Xray\"',add:'\""$xray_addr"\"',port:'\"443\"',id:'"$xray_uuid"',net:'\"ws\"',host:'\""$xray_userDomain"\"',path:'"$xray_streamPath"',tls:'\"tls\"'}' <<<{})
     local shareUrl
-    shareUrl='vless://'$xray_uuid'@'$xray_addr':443?encryption=none&security=tls&type=ws&host='$xray_userDomain'&path=%2F'${xray_streamPath:1}'#vless'
+    shareUrl='vless://'$xray_uuid'@'$xray_addr':443?encryption=none&security=tls&type=ws&host='$xray_userDomain'&path=%2F'${xray_streamPath:1}'#th1nk-Xray'
     echo "$shareUrl"
 }
 
@@ -368,8 +366,6 @@ prepareSoftware() {
     installPackage "$package_provide_tput"
     installPackage "gpg"
     installPackage "unzip"
-    installPackage "vim"
-    installPackage "git"
     installPackage "nginx"
     installPackage "nginx-extras"
     installPackage "jq"
