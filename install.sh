@@ -122,17 +122,18 @@ writeXrayConfig() {
         {
             "port": $(($1)),
             "listen": "127.0.0.1",
-            "protocol": "vmess",
+            "protocol": "vless",
             "settings": {
                 "clients": [
                     {
-                        "id": "$(cat /proc/sys/kernel/random/uuid)",
-                        "alterId": 0
+                        "id": "$(cat /proc/sys/kernel/random/uuid)"
                     }
-                ]
+                ],
+                "decryption": "none"
             },
             "streamSettings": {
                 "network": "ws",
+                "security": "none",
                 "wsSettings": {
                     "path": "/th1nk"
                 }
@@ -180,9 +181,9 @@ EOF
 }
 
 getConfigInfo() {
-    xray_uuid=$(jq ".inbounds[0].settings.clients[0].id" $configPath)
+    xray_uuid=$(jq -r ".inbounds[0].settings.clients[0].id" $configPath)
     xray_addr=$(curl -s 'ip.sb')
-    xray_streamPath=$(jq ".inbounds[0].streamSettings.wsSettings.path" $configPath)
+    xray_streamPath=$(jq -r ".inbounds[0].streamSettings.wsSettings.path" $configPath)
     xray_userDomain=$(grep -m 1 -oP "server_name\s+\K\S+" $nginxPath | tr -d ';')
 }
 
@@ -346,9 +347,11 @@ inputProxyUrl() {
 
 getShareUrl() {
     getConfigInfo
-    local configJson
-    configJson=$(jq -c '{v:2,ps:'\"th1nk-Xray\"',add:'\""$xray_addr"\"',port:'\"443\"',id:'"$xray_uuid"',aid:"0",net:'\"ws\"',host:'\""$xray_userDomain"\"',path:'"$xray_streamPath"',tls:'\"tls\"'}' <<<{})
-    echo "vmess://$(echo -n "$configJson" | base64 -w 0)"
+#    local configJson
+#    configJson=$(jq -c '{v:2,ps:'\"th1nk-Xray\"',add:'\""$xray_addr"\"',port:'\"443\"',id:'"$xray_uuid"',net:'\"ws\"',host:'\""$xray_userDomain"\"',path:'"$xray_streamPath"',tls:'\"tls\"'}' <<<{})
+    local shareUrl
+    shareUrl='vless://'$xray_uuid'@'$xray_addr':443?encryption=none&security=tls&type=ws&host='$xray_userDomain'&path=%2F'${xray_streamPath:1}'#vless'
+    echo "$shareUrl"
 }
 
 getQrCode() {
@@ -368,7 +371,6 @@ prepareSoftware() {
     installPackage "git"
     installPackage "nginx"
     installPackage "nginx-extras"
-    installPackage "curl"
     installPackage "jq"
     installXray
     installWarp
@@ -487,7 +489,7 @@ menu() {
     echo -e "\t\t${red}Xray management${reset}"
     echo -e "\t\t[[author: th1nk]]"
     echo -e "\t—————————————— install ——————————————"
-    echo -e "\t${green}0.${reset}  install Xray(VMESS + WebSocket + TLS + Nginx + WARP)"
+    echo -e "\t${green}0.${reset}  install Xray(VLESS + WebSocket + TLS + Nginx + WARP)"
     echo -e "\t—————————————— modify ——————————————"
     echo -e "\t${green}11.${reset}  modify Xray UUID"
     echo -e "\t${green}12.${reset}  modify Xray port"
