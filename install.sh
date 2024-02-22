@@ -469,10 +469,7 @@ deleteDomainFromWarpProxy() {
     read -rp "${green}Please input the id of domain you want to delete:${reset}" _domainID
     ! isNumber _domainID && deleteDomainFromWarpProxy
     { [ "$_domainID" -gt $((_domainListLength - 1)) ] || [ "$_domainID" -lt 0 ]; } && deleteDomainFromWarpProxy
-
-    local _deleteDomain
-    _deleteDomain=$(echo "$_domainList" | awk "{print \$$((_domainID + 1))}")
-    jq ".routing.rules[0].domain -= [$_deleteDomain]" $configPath >'config.tmp' && mv 'config.tmp' $configPath
+    jq "del(.routing.rules[0].domain[$_domainID])" $configPath >'config.tmp' && mv 'config.tmp' $configPath
 
     echo "${red}WARP Proxy List:${reset}"
     jq '.routing.rules[0].domain' $configPath
