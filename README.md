@@ -1,6 +1,6 @@
 # Xray-script
 > This is a shell script to install Xray and configure it
-## Nginx + VMESS + WebSocket + WARP
+## Nginx + VLESS + WebSocket + WARP
  - **Nginx**: for reverse proxy
  - **WARP**: used to proxy custom requests
 ## Quick Start
