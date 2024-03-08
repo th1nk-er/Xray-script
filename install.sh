@@ -106,7 +106,7 @@ configWarp() {
     warp-cli --accept-tos register
     warp-cli set-mode proxy
     warp-cli connect
-    curl -x 'socks5://127.0.0.1:4000' 'https://www.cloudflare.com/cdn-cgi/trace/'
+    curl -x 'socks5://127.0.0.1:40000' 'https://www.cloudflare.com/cdn-cgi/trace/'
 }
 
 writeXrayConfig() {
@@ -368,7 +368,6 @@ prepareSoftware() {
     installPackage "git"
     installPackage "nginx"
     installPackage "nginx-extras"
-    installPackage "curl"
     installPackage "jq"
     installXray
     installWarp
@@ -451,6 +450,9 @@ addDomainToWarpProxy() {
 
     jq '.routing.rules[0].domain' $configPath
     unset _proxyUrl
+
+    echo 'info: restart Xray.'
+    systemctl restart xray
 }
 
 deleteDomainFromWarpProxy() {
@@ -471,9 +473,7 @@ deleteDomainFromWarpProxy() {
     ! isNumber _domainID && deleteDomainFromWarpProxy
     { [ "$_domainID" -gt $((_domainListLength - 1)) ] || [ "$_domainID" -lt 0 ]; } && deleteDomainFromWarpProxy
 
-    local _deleteDomain
-    _deleteDomain=$(echo "$_domainList" | awk "{print \$$((_domainID + 1))}")
-    jq ".routing.rules[0].domain -= [$_deleteDomain]" $configPath >'config.tmp' && mv 'config.tmp' $configPath
+    jq "del(.routing.rules[0].domain[$_domainID])" $configPath >'config.tmp' && mv 'config.tmp' $configPath
 
     echo "${red}WARP Proxy List:${reset}"
     jq '.routing.rules[0].domain' $configPath
