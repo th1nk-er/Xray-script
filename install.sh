@@ -450,6 +450,9 @@ addDomainToWarpProxy() {
 
     jq '.routing.rules[0].domain' $configPath
     unset _proxyUrl
+
+    echo 'info: restart Xray.'
+    systemctl restart xray
 }
 
 deleteDomainFromWarpProxy() {
