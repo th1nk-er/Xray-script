@@ -10,10 +10,11 @@
     ```shell
     bash -c "$(curl -L https://raw.githubusercontent.com/th1nk-er/Xray-script/main/install.sh)"
     ```
-    > or use `-d` to specify your domain
+    > Quick install: use `-d` to specify your domain
+    >
+    > You can also use `-p` to specify the port and `-P` to specify the proxy url
     ```shell
-    # quick install
-    bash -c "$(curl -L https://raw.githubusercontent.com/th1nk-er/Xray-script/main/install.sh)" -d v2.youdomain.com
+    bash -c "$(curl -L https://raw.githubusercontent.com/th1nk-er/Xray-script/main/install.sh)" -- -d v2.yourdomain.com
     ```
 ## Screenshot
 ![menu](./resources/menu.jpg)
