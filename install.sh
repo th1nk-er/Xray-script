@@ -61,12 +61,17 @@ isCommandExists() {
 
 installPackage() {
     local package_name="$1"
-
+    local required="$2"
+    if [[ -z $required ]]; then
+        required=1
+    fi
     if ${PACKAGE_MANAGEMENT_INSTALL} "$package_name" &>/dev/null; then
         echo "info: $package_name is installed."
     else
         echo "${red}error: Installation of $package_name failed, please check your network.${reset}"
-        exit 1
+        if [[ $required -eq 1 ]]; then
+            exit 1
+        fi
     fi
 }
 
@@ -78,6 +83,21 @@ uninstallPackage() {
         echo "${red}error: Uninstallation of $package_name failed, please try to uninstall it manually.${reset}"
         exit 1
     fi
+}
+
+
+configCert() {
+    systemctl stop nginx
+    installPackage "socat"
+    curl https://get.acme.sh | sh -s email=acme123@mail.com
+    ~/.acme.sh/acme.sh --upgrade --auto-upgrade
+    if ! ~/.acme.sh/acme.sh --issue --force -d "$userDomain" --standalone; then
+        echo "${red}error: Failed to issue certificate${reset}"
+        exit 1
+    fi
+    ~/.acme.sh/acme.sh --install-cert -d "$userDomain" \
+        --key-file /etc/nginx/cert/cert.key \
+        --fullchain-file /etc/nginx/cert/cert.pem
 }
 
 installXray() {
@@ -103,8 +123,8 @@ installWarp() {
 }
 
 configWarp() {
-    warp-cli --accept-tos register
-    warp-cli set-mode proxy
+    warp-cli --accept-tos registration new
+    warp-cli mode proxy
     warp-cli connect
     sleep 3
     curl -x 'socks5://127.0.0.1:40000' 'https://www.cloudflare.com/cdn-cgi/trace/'
@@ -194,6 +214,30 @@ writeNginxConfig() {
     proxyUrl="$3"
     [ -f '/etc/nginx/sites-enabled/default' ] && rm '/etc/nginx/sites-enabled/default'
     setNginxCert
+    cat >/etc/nginx/nginx.conf <<EOF
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+include /usr/share/nginx/modules/*.conf;
+events {
+    worker_connections 1024;
+}
+http {
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log  /var/log/nginx/access.log  main;
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 2048;
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+    include /etc/nginx/conf.d/*.conf;
+}
+EOF
     cat >/etc/nginx/conf.d/default.conf <<EOF
 server {
     listen 80 default_server;
@@ -257,27 +301,29 @@ inputXrayPort() {
     read -rp "${green}Please input Xray port(16500 default):${reset}" xrayPort
     if [ -z "$xrayPort" ]; then
         xrayPort=16500
-        ss -tuln | grep -q ":$xrayPort\b" && echo "${red}The port $xrayPort has been occupied.${reset}" && inputXrayPort
-        return
     fi
-    isNumber $xrayPort
+    if ! checkPort; then
+        inputXrayPort
+    fi
+}
+
+checkPort() {
+    ss -tuln | grep -q ":$xrayPort\b" && echo "${red}The port $xrayPort has been occupied.${reset}" && return 1
+    isNumber "$xrayPort"
     if [ $? -ne 1 ]; then
         echo "${red}the port should be a number.${reset}"
-        inputXrayPort
+        return 1
     fi
 
     if [ "$xrayPort" -gt 65535 ] || [ "$xrayPort" -lt 1 ]; then
         echo "${red}the port should be 1-65535.${reset}"
-        inputXrayPort
+        return 1
     fi
-    ss -tuln | grep -q ":$xrayPort\b" && echo "${red}The port $xrayPort has been occupied.${reset}" && inputXrayPort
-
+    return 0
 }
 
 setNginxCert() {
     [ ! -d '/etc/nginx/cert' ] && mkdir '/etc/nginx/cert'
-    cp 'cert.key' '/etc/nginx/cert/cert.key'
-    cp 'cert.pem' '/etc/nginx/cert/cert.pem'
     cat >/etc/nginx/cert/default.crt <<EOF
 -----BEGIN CERTIFICATE-----
 MIIDUTCCAjmgAwIBAgIQAK9pm0FrtLk7umWBQEDszzANBgkqhkiG9w0BAQsFADAU
@@ -335,17 +381,35 @@ EOF
 inputDomain() {
     read -rp "${green}Please input your domain(DO NOT start with 'http/https'):${reset}" userDomain
 
-    [[ ! $userDomain =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]] && echo "${red}The content you input is not a legal domain!${reset}" && inputDomain
+    ! checkDomain && inputDomain
+
+}
+
+checkDomain() {
+    if [[ ! $userDomain =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; then
+        echo "${red}The content you input is not a legal domain!${reset}"
+        return 1
+    else
+        return 0
+    fi
 
 }
 
 inputProxyUrl() {
     read -rp "${green}Please input the proxy url(default https://httpbin.org/):${reset}" proxyUrl
     [ -z "$proxyUrl" ] && proxyUrl='https://httpbin.org/'
-    local regex="^https?://[^[:space:]]+$"
-    [[ ! $proxyUrl =~ $regex ]] && echo "${red}The content you input is not a legal url!${reset}" && inputProxyUrl
+    ! checkProxyUrl && inputProxyUrl
 }
 
+checkProxyUrl() {
+    local regex="^https?://[^[:space:]]+$"
+    if [[ ! $proxyUrl =~ $regex ]]; then
+        echo "${red}The content you input is not a legal url!${reset}"
+        return 1
+    else
+        return 0
+    fi
+}
 getShareUrl() {
     getConfigInfo
     local shareUrl
@@ -364,28 +428,30 @@ getQrCode() {
 
 prepareSoftware() {
     installPackage "$package_provide_tput"
+    installPackage "tar"
     installPackage "gpg"
     installPackage "unzip"
     installPackage "nginx"
-    installPackage "nginx-extras"
+    installPackage "nginx-extras" 0
     installPackage "jq"
     installXray
     installWarp
 }
 
 install() {
-    ! [ -e "cert.key" ] || ! [ -e "cert.pem" ] && echo "${red}Please ensure 'cert.key' and 'cert.pem' exist in the current directory.${reset}" && exit 1
 
     isRoot
     identifyOS
     prepareSoftware
-    inputXrayPort
-    inputDomain
-    inputProxyUrl
-    writeXrayConfig $xrayPort
-    writeNginxConfig $xrayPort "$userDomain" $proxyUrl
+    if [[ -n $xrayDomain ]];then
+      inputXrayPort
+      inputDomain
+      inputProxyUrl
+    fi
+    writeXrayConfig "$xrayPort"
+    writeNginxConfig "$xrayPort" "$userDomain" "$proxyUrl"
     configWarp
-
+    configCert
     systemctl restart xray nginx
     systemctl enable nginx xray
 
@@ -483,6 +549,52 @@ deleteDomainFromWarpProxy() {
 }
 
 menu() {
+    while getopts ":p:d:P:" opt; do
+        case $opt in
+        p)
+            xrayPort=$OPTARG
+            if ! checkPort; then
+                echo "Invalid port: $xrayPort"
+                exit 1
+            fi
+            ;;
+        d)
+            userDomain=$OPTARG
+            if ! checkDomain; then
+                echo "Invalid domain: $userDomain"
+                exit 1
+            fi
+            ;;
+        P)
+            proxyUrl=$OPTARG
+            if ! checkProxyUrl; then
+                echo "Invalid proxy URL: $proxyUrl"
+                exit 1
+            fi
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG"
+            exit 1
+            ;;
+        esac
+    done
+    if [[ -n "$userDomain" ]]; then
+        if [[ -z "$xrayPort" ]]; then
+            # default port
+            xrayPort=16500
+            if ! checkPort; then
+                echo "Invalid port: $xrayPort"
+                exit 1
+            fi
+        fi
+        if [[ -z "$proxyUrl" ]]; then
+            # default proxy url
+            proxyUrl="https://httpbin.org"
+        fi
+        echo "info: start to install Xray with port $xrayPort, domain $userDomain, proxy pass url $proxyUrl"
+        install
+        return
+    fi
     echo -e "\t\t${red}Xray management${reset}"
     echo -e "\t\t[[author: th1nk]]"
     echo -e "\t—————————————— install ——————————————"
